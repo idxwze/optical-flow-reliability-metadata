@@ -21,5 +21,18 @@ We aim to predict reliability using scenario metadata.
 - `meeting_notes/` supervisor meeting notes
 - `metadata_schema.md` definition of metadata fields
 
-## How to Run (placeholder)
-Coming soon.
+## End-to-end
+1. Build one combined metadata table across all scenarios:
+   ```bash
+   source .venv/bin/activate
+   python -m src.build_all_tables \
+     --dataset_root "/Users/seifeddinereguige/Documents/tfds_Dataset" \
+     --max_records 5000 \
+     --splits train
+   ```
+   Outputs:
+   - `outputs/table_all_scenarios.csv`
+   - `outputs/table_all_scenarios_summary.json`
+
+2. Train model:
+   - Training pipeline will be added next; it will consume `outputs/table_all_scenarios.csv`.
