@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 from pathlib import Path
+import re
 
 import numpy as np
 from scipy.stats import spearmanr
@@ -33,7 +34,12 @@ def _to_float(value: str) -> float:
     return float(v)
 
 
-def load_dataset(csv_path: str | Path):
+def _target_to_filename_token(target_column: str) -> str:
+    token = re.sub(r"[^A-Za-z0-9._-]+", "_", target_column.strip())
+    return token or "target"
+
+
+def load_dataset(csv_path: str | Path, target_column: str):
     scenarios: list[str] = []
     record_indices: list[int] = []
     x_rows: list[list[float]] = []
@@ -41,13 +47,13 @@ def load_dataset(csv_path: str | Path):
 
     with Path(csv_path).open(newline="") as f:
         reader = csv.DictReader(f)
-        required = {"scenario", "record_index", TARGET_COLUMN, *FEATURE_COLUMNS}
+        required = {"scenario", "record_index", target_column, *FEATURE_COLUMNS}
         missing = required - set(reader.fieldnames or [])
         if missing:
             raise ValueError(f"Missing required columns in CSV: {sorted(missing)}")
 
         for row in reader:
-            y = _to_float(row[TARGET_COLUMN])
+            y = _to_float(row[target_column])
             if np.isnan(y):
                 # Skip rows without target.
                 continue
@@ -79,6 +85,7 @@ def evaluate_and_save(
     scenarios: np.ndarray,
     record_indices: np.ndarray,
     output_dir: Path,
+    target_column: str,
 ):
     # Fit/test pipeline with median imputation.
     pipeline = Pipeline(
@@ -143,14 +150,15 @@ def evaluate_and_save(
             "mae_std": cv_mae_std,
         },
         "features": FEATURE_COLUMNS,
-        "target": TARGET_COLUMN,
+        "target": target_column,
     }
 
-    metrics_path = output_dir / f"metrics_{model_name}.json"
+    target_token = _target_to_filename_token(target_column)
+    metrics_path = output_dir / f"metrics_{model_name}_{target_token}.json"
     with metrics_path.open("w") as f:
         json.dump(metrics, f, indent=2)
 
-    preds_path = output_dir / f"preds_{model_name}.csv"
+    preds_path = output_dir / f"preds_{model_name}_{target_token}.csv"
     with preds_path.open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["scenario", "record_index", "y_true", "y_pred"])
@@ -176,13 +184,18 @@ def main():
         default="outputs",
         help="Directory to write metrics and predictions (default: outputs).",
     )
+    parser.add_argument(
+        "--target",
+        default=TARGET_COLUMN,
+        help=f"Target column name in CSV (default: {TARGET_COLUMN}).",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    X, y, scenarios, record_indices = load_dataset(args.csv)
-    print(f"Loaded {X.shape[0]} rows from {args.csv}")
+    X, y, scenarios, record_indices = load_dataset(args.csv, args.target)
+    print(f"Loaded {X.shape[0]} rows from {args.csv} with target '{args.target}'")
 
     models = {
         "linear_regression": LinearRegression(),
@@ -199,6 +212,7 @@ def main():
             scenarios=scenarios,
             record_indices=record_indices,
             output_dir=output_dir,
+            target_column=args.target,
         )
 
 

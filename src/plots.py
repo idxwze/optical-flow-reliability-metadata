@@ -29,7 +29,11 @@ def _to_float(value: str) -> float:
     return float(v)
 
 
-def load_table(table_path: str | Path):
+def _target_label(target_column: str) -> str:
+    return target_column.replace("_", " ")
+
+
+def load_table(table_path: str | Path, target_column: str):
     scenarios: list[str] = []
     x_rows: list[list[float]] = []
     y_vals: list[float] = []
@@ -37,14 +41,14 @@ def load_table(table_path: str | Path):
 
     with Path(table_path).open(newline="") as f:
         reader = csv.DictReader(f)
-        required = {"scenario", TARGET_COLUMN, *FEATURE_COLUMNS}
+        required = {"scenario", target_column, *FEATURE_COLUMNS}
         missing = required - set(reader.fieldnames or [])
         if missing:
             raise ValueError(f"Missing required columns in table CSV: {sorted(missing)}")
 
         for row in reader:
             scenario = row["scenario"]
-            y = _to_float(row[TARGET_COLUMN])
+            y = _to_float(row[target_column])
             if not np.isnan(y):
                 y_by_scenario.setdefault(scenario, []).append(y)
                 y_vals.append(y)
@@ -80,22 +84,33 @@ def load_preds(preds_path: str | Path):
     return np.asarray(y_true, dtype=np.float64), np.asarray(y_pred, dtype=np.float64)
 
 
-def plot_scatter_true_vs_pred(y_true: np.ndarray, y_pred: np.ndarray, out_path: Path):
+def plot_scatter_true_vs_pred(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    out_path: Path,
+    target_column: str,
+):
+    label = _target_label(target_column)
     fig, ax = plt.subplots(figsize=(6.5, 6))
     ax.scatter(y_true, y_pred, s=20, alpha=0.7)
     min_v = float(min(np.min(y_true), np.min(y_pred)))
     max_v = float(max(np.max(y_true), np.max(y_pred)))
     ax.plot([min_v, max_v], [min_v, max_v], linestyle="--", linewidth=1.5)
-    ax.set_xlabel("True reliability score")
-    ax.set_ylabel("Predicted reliability score")
-    ax.set_title("True vs Predicted Reliability Score")
+    ax.set_xlabel(f"True {label}")
+    ax.set_ylabel(f"Predicted {label}")
+    ax.set_title(f"True vs Predicted {label.title()}")
     ax.grid(alpha=0.2)
     fig.tight_layout()
     fig.savefig(out_path, dpi=180)
     plt.close(fig)
 
 
-def plot_hist_score_by_scenario(y_by_scenario: dict[str, list[float]], out_path: Path):
+def plot_hist_score_by_scenario(
+    y_by_scenario: dict[str, list[float]],
+    out_path: Path,
+    target_column: str,
+):
+    label = _target_label(target_column)
     # Use horizontal boxplots for readability with many scenarios.
     ordered = sorted(y_by_scenario.items(), key=lambda kv: np.median(kv[1]))
     labels = [k for k, _ in ordered]
@@ -104,9 +119,9 @@ def plot_hist_score_by_scenario(y_by_scenario: dict[str, list[float]], out_path:
     height = max(6, 0.32 * len(labels))
     fig, ax = plt.subplots(figsize=(12, height))
     ax.boxplot(data, vert=False, labels=labels, showfliers=False)
-    ax.set_xlabel("Reliability score")
+    ax.set_xlabel(label.title())
     ax.set_ylabel("Scenario")
-    ax.set_title("Reliability Score Distribution by Scenario")
+    ax.set_title(f"{label.title()} Distribution by Scenario")
     ax.grid(axis="x", alpha=0.2)
     fig.tight_layout()
     fig.savefig(out_path, dpi=180)
@@ -149,8 +164,16 @@ def main():
     )
     parser.add_argument(
         "--preds",
-        default="outputs/preds_gradient_boosting.csv",
-        help="Path to predictions CSV (default: outputs/preds_gradient_boosting.csv).",
+        default="outputs/preds_gradient_boosting_reliability_score.csv",
+        help=(
+            "Path to predictions CSV "
+            "(default: outputs/preds_gradient_boosting_reliability_score.csv)."
+        ),
+    )
+    parser.add_argument(
+        "--target",
+        default=TARGET_COLUMN,
+        help=f"Target column name in the table CSV (default: {TARGET_COLUMN}).",
     )
     parser.add_argument(
         "--out_dir",
@@ -162,15 +185,15 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    X, y, y_by_scenario = load_table(args.table)
+    X, y, y_by_scenario = load_table(args.table, args.target)
     y_true, y_pred = load_preds(args.preds)
 
     scatter_path = out_dir / "scatter_true_vs_pred.png"
     scenario_path = out_dir / "hist_score_by_scenario.png"
     importance_path = out_dir / "feature_importance.png"
 
-    plot_scatter_true_vs_pred(y_true, y_pred, scatter_path)
-    plot_hist_score_by_scenario(y_by_scenario, scenario_path)
+    plot_scatter_true_vs_pred(y_true, y_pred, scatter_path, args.target)
+    plot_hist_score_by_scenario(y_by_scenario, scenario_path, args.target)
     plot_feature_importance(X, y, importance_path)
 
     print(f"Saved: {scatter_path}")

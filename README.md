@@ -1,38 +1,113 @@
 # Predicting Optical Flow Reliability from Motion Scenario Metadata
 
-This project predicts the reliability of optical flow estimation using motion scenario metadata.
-Goal: flag when optical flow is likely to be inaccurate, and analyze which scenarios cause failures.
+This repository contains a compact, reproducible pipeline for predicting optical-flow reliability from scenario metadata extracted from TFRecord video examples.
 
-## Problem
-Optical flow can fail under certain conditions (fast motion, blur, occlusions, low texture, lighting changes).
-We aim to predict reliability using scenario metadata.
+The repo supports three targets:
+- `reliability_score`: proxy difficulty label from ground-truth flow magnitude
+- `epe_mean`: Farneback optical-flow error against ground truth
+- `epe_mean_raft`: RAFT optical-flow error against ground truth
 
-## Approach (initial)
-- Inputs: motion scenario metadata (and optionally cheap image statistics)
-- Output: reliability score or class (reliable/unreliable)
-- Models: baseline (logistic regression / random forest), then stronger models (e.g., XGBoost)
-- Evaluation: AUC/F1 (classification) or MAE/Spearman (regression), plus per-scenario breakdown
+## Repository Layout
+- `src/`: library code and CLI entrypoints
+- `tools/`: lightweight inspection and sample-export utilities
+- `reports/figures/`: tracked report figures
+- `outputs/`: generated CSVs, metrics, predictions, and caches (git-ignored)
 
-## Repo Structure
-- `src/` training + evaluation code
-- `notebooks/` exploration
-- `data/` placeholders (raw data not committed)
-- `reports/` figures + write-up assets
-- `meeting_notes/` supervisor meeting notes
-- `metadata_schema.md` definition of metadata fields
+## Dataset
+- Expected TFRecord root: `/Users/seifeddinereguige/Documents/tfds_Dataset`
+- TFRecords are not committed
+- Override the dataset path with `--dataset_root`
 
-## End-to-end
-1. Build one combined metadata table across all scenarios:
-   ```bash
-   source .venv/bin/activate
-   python -m src.build_all_tables \
-     --dataset_root "/Users/seifeddinereguige/Documents/tfds_Dataset" \
-     --max_records 5000 \
-     --splits train
-   ```
-   Outputs:
-   - `outputs/table_all_scenarios.csv`
-   - `outputs/table_all_scenarios_summary.json`
+Each example contains:
+- `video`
+- `forward_flow`
+- `metadata/forward_flow_range`
+- `metadata/height`, `metadata/width`, `metadata/num_frames`
+- `metadata/num_instances`
+- `camera/positions`, `camera/quaternions`
+- `instances/velocities`
 
-2. Train model:
-   - Training pipeline will be added next; it will consume `outputs/table_all_scenarios.csv`.
+## Environment Setup
+```bash
+cd /Users/seifeddinereguige/PycharmProjects/optical-flow-reliability-metadata
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+## Quickstart
+### Farneback EPE build
+```bash
+python -m src.build_all_tables_epe \
+  --dataset_root "/Users/seifeddinereguige/Documents/tfds_Dataset" \
+  --max_records 5000 \
+  --splits train
+```
+
+### Farneback EPE train
+```bash
+python -m src.train_regressor \
+  --csv outputs/table_all_scenarios_epe.csv \
+  --target epe_mean
+```
+
+### RAFT EPE build
+```bash
+python -m src.build_all_tables_raft_epe \
+  --dataset_root "/Users/seifeddinereguige/Documents/tfds_Dataset" \
+  --max_records 10 \
+  --max_pairs 3 \
+  --splits train \
+  --raft_model small
+```
+
+### RAFT EPE train
+```bash
+python -m src.train_regressor \
+  --csv outputs/table_all_scenarios_raft_epe.csv \
+  --target epe_mean_raft
+```
+
+### Plots generation
+```bash
+python -m src.plots \
+  --table outputs/table_all_scenarios.csv \
+  --preds outputs/preds_gradient_boosting_reliability_score.csv \
+  --target reliability_score \
+  --out_dir reports/figures
+```
+
+### Make targets
+```bash
+make build_epe
+make train_epe
+make build_raft_epe
+make train_raft_epe
+make plots
+```
+
+## Outputs
+- `outputs/table_all_scenarios.csv`
+- `outputs/table_all_scenarios_epe.csv`
+- `outputs/table_all_scenarios_raft_epe.csv`
+- `outputs/metrics_<model>_<target>.json`
+- `outputs/preds_<model>_<target>.csv`
+- `outputs/cache_raft/*.json`
+- `reports/figures/*.png`
+
+## Utility Tools
+Inspect one sample:
+```bash
+python tools/inspect_one_record.py --scenario linear_movement_rotate_bar --record_index 0
+```
+
+Export sample frames and GIF:
+```bash
+python tools/export_sample_media.py --scenario linear_movement_slide --record_index 0
+```
+
+## Notes
+- TensorFlow is kept because TFRecord reading and frame decoding use it directly.
+- `src.plots` supports configurable targets, but the tracked report figures currently reflect the proxy-label workflow.
+- No Streamlit app is present in this repo at the moment.
