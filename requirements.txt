@@ -8,3 +8,4 @@ tensorflow==2.20.0
 opencv-python==4.10.0.84
 torch==2.5.1
 torchvision==0.20.1
+streamlit==1.39.0

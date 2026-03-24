@@ -1,24 +1,36 @@
 # Predicting Optical Flow Reliability from Motion Scenario Metadata
 
-This repository contains a compact, reproducible pipeline for predicting optical-flow reliability from scenario metadata extracted from TFRecord video examples.
+This CSI4900 project studies whether we can predict optical-flow reliability from lightweight scenario metadata instead of running a full optical-flow model at deployment time.
 
-The repo supports three targets:
-- `reliability_score`: proxy difficulty label from ground-truth flow magnitude
-- `epe_mean`: Farneback optical-flow error against ground truth
-- `epe_mean_raft`: RAFT optical-flow error against ground truth
+## Project At A Glance
+- Predicts optical-flow reliability from scene metadata such as object count, camera motion, and instance velocity statistics.
+- Uses three reliability definitions:
+  - `reliability_score`: proxy target from ground-truth flow magnitude
+  - `epe_mean`: classical reliability target from Farneback EPE vs ground truth
+  - `epe_mean_raft`: modern reliability target from RAFT EPE vs ground truth
+- Implements:
+  - TFRecord ingestion and decoding
+  - metadata feature extraction
+  - CSV generation for all three targets
+  - regression baselines
+  - saved metrics and prediction CSVs
+  - plots and media exports
+  - a Streamlit demo
 
 ## Repository Layout
 - `src/`: library code and CLI entrypoints
-- `tools/`: lightweight inspection and sample-export utilities
-- `reports/figures/`: tracked report figures
-- `outputs/`: generated CSVs, metrics, predictions, and caches (git-ignored)
+- `tools/`: inspection and sample-export utilities
+- `reports/figures/`: tracked figures for the report
+- `outputs/`: generated CSVs, metrics, predictions, and sample media
+- `streamlit_app.py`: interactive demo
 
 ## Dataset
-- Expected TFRecord root: `/Users/seifeddinereguige/Documents/tfds_Dataset`
-- TFRecords are not committed
-- Override the dataset path with `--dataset_root`
+- Expected local dataset root: `/Users/seifeddinereguige/Documents/tfds_Dataset`
+- Raw TFRecords are not committed to the repo
+- Generated outputs are written to `outputs/`
+- Both TFRecords and outputs are excluded from git via `.gitignore`
 
-Each example contains:
+Each TFRecord example includes:
 - `video`
 - `forward_flow`
 - `metadata/forward_flow_range`
@@ -37,22 +49,26 @@ pip install -r requirements.txt
 ```
 
 ## Quickstart
-### Farneback EPE build
+
+### Farneback EPE workflow
 ```bash
 python -m src.build_all_tables_epe \
   --dataset_root "/Users/seifeddinereguige/Documents/tfds_Dataset" \
   --max_records 5000 \
   --splits train
-```
 
-### Farneback EPE train
-```bash
 python -m src.train_regressor \
   --csv outputs/table_all_scenarios_epe.csv \
   --target epe_mean
+
+python -m src.plots \
+  --table outputs/table_all_scenarios_epe.csv \
+  --preds outputs/preds_gradient_boosting_epe_mean.csv \
+  --target epe_mean \
+  --out_dir reports/figures
 ```
 
-### RAFT EPE build
+### RAFT EPE workflow + demo
 ```bash
 python -m src.build_all_tables_raft_epe \
   --dataset_root "/Users/seifeddinereguige/Documents/tfds_Dataset" \
@@ -60,25 +76,23 @@ python -m src.build_all_tables_raft_epe \
   --max_pairs 3 \
   --splits train \
   --raft_model small
-```
 
-### RAFT EPE train
-```bash
 python -m src.train_regressor \
   --csv outputs/table_all_scenarios_raft_epe.csv \
   --target epe_mean_raft
+
+python -m tools.export_sample_media \
+  --dataset_root "/Users/seifeddinereguige/Documents/tfds_Dataset" \
+  --scenario "fixed_random_rotate" \
+  --record_index 0 \
+  --fps 8 \
+  --raft_model small \
+  --pair_index 0
+
+streamlit run streamlit_app.py
 ```
 
-### Plots generation
-```bash
-python -m src.plots \
-  --table outputs/table_all_scenarios.csv \
-  --preds outputs/preds_gradient_boosting_reliability_score.csv \
-  --target reliability_score \
-  --out_dir reports/figures
-```
-
-### Make targets
+### Optional make targets
 ```bash
 make build_epe
 make train_epe
@@ -86,6 +100,16 @@ make build_raft_epe
 make train_raft_epe
 make plots
 ```
+
+## Visual Docs
+- [Workflow](WORKFLOW.md)
+- [Roadmap](ROADMAP.md)
+- [Results](RESULTS.md)
+
+## Screenshots
+- `reports/figures/streamlit_screenshot.png` is not in the repo yet.
+- To add it, run the demo, capture one clean screenshot, and save it under `reports/figures/streamlit_screenshot.png`.
+- Short capture instructions are available in [scripts/capture_demo_instructions.md](scripts/capture_demo_instructions.md).
 
 ## Outputs
 - `outputs/table_all_scenarios.csv`
@@ -96,18 +120,18 @@ make plots
 - `outputs/cache_raft/*.json`
 - `reports/figures/*.png`
 
-## Utility Tools
-Inspect one sample:
+## Utility Commands
+Inspect one TFRecord sample:
 ```bash
 python tools/inspect_one_record.py --scenario linear_movement_rotate_bar --record_index 0
 ```
 
-Export sample frames and GIF:
+Export frames, GIF, RAFT flow, and EPE heatmap:
 ```bash
-python tools/export_sample_media.py --scenario linear_movement_slide --record_index 0
+python -m tools.export_sample_media --scenario fixed_random_rotate --record_index 0
 ```
 
 ## Notes
 - TensorFlow is kept because TFRecord reading and frame decoding use it directly.
-- `src.plots` supports configurable targets, but the tracked report figures currently reflect the proxy-label workflow.
-- No Streamlit app is present in this repo at the moment.
+- `src.plots` supports configurable targets.
+- The current saved experiment set is still relatively small, so the metrics should be read as promising intermediate results rather than final conclusions.
