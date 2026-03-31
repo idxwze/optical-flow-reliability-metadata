@@ -6,6 +6,15 @@ from typing import Any
 import numpy as np
 
 
+FEATURE_COLUMNS = [
+    "num_instances",
+    "camera_translation_speed_mean",
+    "camera_rotation_change_mean",
+    "instance_speed_mean",
+    "visibility_mean",
+]
+
+
 def feature_to_numpy_list(feature: Any) -> np.ndarray:
     if feature is None:
         return np.array([])
@@ -14,7 +23,7 @@ def feature_to_numpy_list(feature: Any) -> np.ndarray:
     if feature.float_list.value:
         return np.asarray(feature.float_list.value)
     if feature.bytes_list.value:
-        return np.asarray(feature.bytes_list.value)
+        return np.asarray(feature.bytes_list.value, dtype=object)
     return np.array([])
 
 
@@ -23,6 +32,14 @@ def get_feature_array(example, key: str) -> np.ndarray:
     if key not in feats:
         return np.array([])
     return feature_to_numpy_list(feats[key])
+
+
+def get_first_available_feature_array(example, keys: list[str]) -> np.ndarray:
+    for key in keys:
+        arr = get_feature_array(example, key)
+        if arr.size > 0:
+            return arr
+    return np.array([])
 
 
 def get_scalar_int(example, key: str) -> int | None:
@@ -92,16 +109,80 @@ def instance_speed_mean(
     return float(np.mean(mag))
 
 
-def compute_metadata_features(example) -> dict[str, float | int]:
+def _debug_log(debug: bool, message: str) -> None:
+    if debug:
+        print(f"[example_features] {message}")
+
+
+def _safe_optional_feature(name: str, fn, debug: bool) -> float:
+    try:
+        value = fn()
+        if value is None:
+            return math.nan
+        return float(value)
+    except Exception as exc:
+        _debug_log(debug, f"{name} failed: {exc}")
+        return math.nan
+
+
+def _reshape_visibility(
+    visibility: np.ndarray,
+    num_instances: int | None,
+    num_frames: int | None,
+) -> np.ndarray | None:
+    if visibility.size == 0:
+        return None
+
+    arr = np.asarray(visibility, dtype=np.float32)
+    if arr.ndim == 2:
+        return arr
+
+    flat = arr.reshape(-1)
+
+    if num_frames and num_instances and flat.size == num_frames * num_instances:
+        return flat.reshape(num_frames, num_instances)
+
+    if num_frames and flat.size % num_frames == 0:
+        return flat.reshape(num_frames, -1)
+
+    if num_instances and flat.size % num_instances == 0:
+        return flat.reshape(-1, num_instances)
+
+    return flat.reshape(1, -1)
+
+
+def visibility_mean(
+    visibility: np.ndarray,
+    num_instances: int | None,
+    num_frames: int | None,
+) -> float:
+    vis = _reshape_visibility(visibility, num_instances, num_frames)
+    if vis is None:
+        return math.nan
+    return float(np.mean(vis))
+
+
+def compute_metadata_features(example, debug: bool = False) -> dict[str, float | int]:
     num_frames = get_scalar_int(example, "metadata/num_frames")
     num_instances = get_scalar_int(example, "metadata/num_instances")
+
     positions = get_feature_array(example, "camera/positions")
     quaternions = get_feature_array(example, "camera/quaternions")
     velocities = get_feature_array(example, "instances/velocities")
+
+    visibility = get_first_available_feature_array(
+        example,
+        ["instances/visibility", "visibility"],
+    )
 
     return {
         "num_instances": num_instances if num_instances is not None else math.nan,
         "camera_translation_speed_mean": camera_translation_speed_mean(positions, num_frames),
         "camera_rotation_change_mean": camera_rotation_change_mean(quaternions, num_frames),
         "instance_speed_mean": instance_speed_mean(velocities, num_instances, num_frames),
+        "visibility_mean": _safe_optional_feature(
+            "visibility_mean",
+            lambda: visibility_mean(visibility, num_instances, num_frames),
+            debug,
+        ),
     }

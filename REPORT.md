@@ -77,6 +77,12 @@ Evaluation protocol:
 - Metrics on test set: MAE, RMSE, R², Spearman correlation
 - 5-fold cross-validation MAE on full dataset
 
+Latest extended evaluation:
+- Repeated scenario-holdout split
+- 20% of unique scenarios held out for test
+- 10 repeats with seeds 42 through 51
+- 5-fold CV MAE computed on the training portion only
+
 ## 4. Experiments and Results
 All numbers below come from 178 rows.
 
@@ -102,6 +108,54 @@ All numbers below come from 178 rows.
   - Proxy label is smoother and easier to model from metadata.
   - True EPE captures estimator-specific errors and is harder to predict.
 - Even for true EPE, metadata remains predictive (R² around 0.86 for tree models), which is promising.
+
+### 4.4 Latest Results: Repeated Scenario-Holdout Evaluation
+
+Experimental setup:
+- Split mode: scenario holdout
+- Repeats: 10
+- Seeds: 42 to 51
+- Rows: 178
+- Farneback CSV: `outputs/table_all_scenarios_epe.csv`
+- RAFT CSV: `outputs/table_all_scenarios_raft_epe.csv`
+- Farneback features: `num_instances`, `camera_translation_speed_mean`, `camera_rotation_change_mean`, `instance_speed_mean`
+- RAFT features: `num_instances`, `camera_translation_speed_mean`, `camera_rotation_change_mean`, `instance_speed_mean`, `visibility_mean`
+- Summary JSONs:
+  - `outputs/metrics_summary_epe_mean_scenario.json`
+  - `outputs/metrics_summary_epe_mean_raft_scenario.json`
+
+#### Farneback target: `epe_mean`
+
+| model | MAE_test | RMSE_test | R2_test | Spearman_test |
+|---|---:|---:|---:|---:|
+| linear_regression | 1.2041 ± 0.2815 | 1.6619 ± 0.4938 | 0.7605 ± 0.1088 | 0.8316 ± 0.0623 |
+| random_forest | 0.9517 ± 0.3170 | 1.5117 ± 0.5459 | 0.7987 ± 0.1147 | 0.8466 ± 0.0604 |
+| gradient_boosting | 1.0259 ± 0.3248 | 1.7910 ± 0.5024 | 0.7251 ± 0.1163 | 0.8419 ± 0.0513 |
+
+#### RAFT target: `epe_mean_raft`
+
+| model | MAE_test | RMSE_test | R2_test | Spearman_test |
+|---|---:|---:|---:|---:|
+| linear_regression | 1.4870 ± 0.4315 | 2.1255 ± 0.7189 | 0.6036 ± 0.1676 | 0.7673 ± 0.0725 |
+| random_forest | 1.0979 ± 0.3953 | 1.9095 ± 0.6451 | 0.6935 ± 0.1057 | 0.8505 ± 0.0599 |
+| gradient_boosting | 1.2435 ± 0.3568 | 2.1913 ± 0.5615 | 0.5790 ± 0.1354 | 0.7824 ± 0.1126 |
+
+Interpretation:
+- Random Forest is the best baseline in the repeated scenario-holdout setting for both targets.
+- Farneback EPE generalizes better than RAFT EPE under unseen scenarios.
+- The RAFT target remains meaningfully predictable, but it is clearly the harder target from metadata alone.
+- These repeated-split results are more realistic than a single random row split because they test motion-scenario transfer rather than row-level interpolation.
+
+## 4.5 Final Evaluation Summary
+
+The final set of evaluated targets in this repo is:
+- `reliability_score` as a proxy reliability target
+- `epe_mean` as the Farneback-based reliability target
+- `epe_mean_raft` as the RAFT-based reliability target
+
+The main evaluation protocol for the latest experiments is repeated scenario-holdout: 10 repeats, seeds 42 through 51, and `n_rows = 178`. This is a stricter test than a random row split because entire motion scenarios are held out at test time. The full tables and supporting context are collected in [RESULTS.md](RESULTS.md).
+
+The headline comparison is that Farneback generalizes better than RAFT under repeated scenario holdout. In [RESULTS.md](RESULTS.md), the Random Forest baseline reaches about `R² = 0.7987 ± 0.1147` for `epe_mean`, compared with about `R² = 0.6935 ± 0.1057` for `epe_mean_raft`. This suggests that RAFT error is still predictable from metadata, but it is the harder target under unseen-scenario evaluation.
 
 ## 5. Figures
 Current figures in `reports/figures/`:

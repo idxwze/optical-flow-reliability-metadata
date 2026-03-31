@@ -59,7 +59,10 @@ python -m src.build_all_tables_epe \
 
 python -m src.train_regressor \
   --csv outputs/table_all_scenarios_epe.csv \
-  --target epe_mean
+  --target epe_mean \
+  --split_mode scenario \
+  --repeats 10 \
+  --seed 42
 
 python -m src.plots \
   --table outputs/table_all_scenarios_epe.csv \
@@ -79,7 +82,10 @@ python -m src.build_all_tables_raft_epe \
 
 python -m src.train_regressor \
   --csv outputs/table_all_scenarios_raft_epe.csv \
-  --target epe_mean_raft
+  --target epe_mean_raft \
+  --split_mode scenario \
+  --repeats 10 \
+  --seed 42
 
 python -m tools.export_sample_media \
   --dataset_root "/Users/seifeddinereguige/Documents/tfds_Dataset" \
@@ -91,6 +97,10 @@ python -m tools.export_sample_media \
 
 streamlit run streamlit_app.py
 ```
+
+## Results
+- The latest repeated scenario-holdout summaries are documented in [RESULTS.md](RESULTS.md).
+- Current headline: Farneback EPE generalizes better than RAFT EPE under repeated scenario holdout, while Random Forest is the strongest baseline for both targets.
 
 ### Optional make targets
 ```bash
@@ -135,3 +145,4 @@ python -m tools.export_sample_media --scenario fixed_random_rotate --record_inde
 - TensorFlow is kept because TFRecord reading and frame decoding use it directly.
 - `src.plots` supports configurable targets.
 - The current saved experiment set is still relatively small, so the metrics should be read as promising intermediate results rather than final conclusions.
+- The latest recommended evaluation protocol is repeated scenario-holdout rather than a single random row split.

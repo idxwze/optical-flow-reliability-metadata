@@ -8,7 +8,12 @@ from typing import Any
 
 from src.build_table import DEFAULT_DATASET_ROOT, DEFAULT_OUTPUT_DIR
 from src.epe_metrics import compute_raft_epe
-from src.example_features import compute_metadata_features, get_feature_array, get_scalar_int
+from src.example_features import (
+    FEATURE_COLUMNS,
+    compute_metadata_features,
+    get_feature_array,
+    get_scalar_int,
+)
 from src.raft_infer import load_raft_runner
 from src.tfrecord_reader import (
     build_raw_dataset,
@@ -22,10 +27,7 @@ from src.video_decode import decode_video_frames
 CSV_FIELDS = [
     "scenario",
     "record_index",
-    "num_instances",
-    "camera_translation_speed_mean",
-    "camera_rotation_change_mean",
-    "instance_speed_mean",
+    *FEATURE_COLUMNS,
     "epe_mean_raft",
 ]
 

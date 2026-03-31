@@ -7,7 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from src.epe import decode_ground_truth_forward_flow, mean_epe
-from src.example_features import compute_metadata_features, get_feature_array, get_scalar_int
+from src.example_features import (
+    FEATURE_COLUMNS,
+    compute_metadata_features,
+    get_feature_array,
+    get_scalar_int,
+)
 from src.flow_estimator import decode_video_frames, estimate_farneback_flow
 from src.tfrecord_reader import (
     build_raw_dataset,
@@ -23,10 +28,7 @@ DEFAULT_OUTPUT_DIR = Path("outputs")
 CSV_FIELDS = [
     "scenario",
     "record_index",
-    "num_instances",
-    "camera_translation_speed_mean",
-    "camera_rotation_change_mean",
-    "instance_speed_mean",
+    *FEATURE_COLUMNS,
     "epe_mean",
 ]
 
@@ -46,17 +48,16 @@ def _normalize_splits(raw_splits: list[str]) -> list[str]:
 
 
 def _compute_row(example, scenario: str, index: int) -> dict[str, Any]:
-    num_frames = _get_scalar_int(example, "metadata/num_frames")
-    height = _get_scalar_int(example, "metadata/height")
-    width = _get_scalar_int(example, "metadata/width")
-    num_instances = _get_scalar_int(example, "metadata/num_instances")
+    num_frames = get_scalar_int(example, "metadata/num_frames")
+    height = get_scalar_int(example, "metadata/height")
+    width = get_scalar_int(example, "metadata/width")
 
     if num_frames is None or height is None or width is None:
         raise ValueError("Missing one of metadata/num_frames,height,width.")
 
     metadata_features = compute_metadata_features(example)
 
-    video = _get_feature_array(example, "video")
+    video = get_feature_array(example, "video")
     if video.size == 0:
         raise ValueError("Missing video feature.")
     frame_bytes = [bytes(x) for x in video.reshape(-1)]
@@ -68,8 +69,8 @@ def _compute_row(example, scenario: str, index: int) -> dict[str, Any]:
     )
     pred = estimate_farneback_flow(frames)
 
-    forward_flow = _get_feature_array(example, "forward_flow")
-    flow_range = _get_feature_array(example, "metadata/forward_flow_range")
+    forward_flow = get_feature_array(example, "forward_flow")
+    flow_range = get_feature_array(example, "metadata/forward_flow_range")
     if forward_flow.size == 0 or flow_range.size < 2:
         raise ValueError("Missing forward_flow or metadata/forward_flow_range.")
     gt = decode_ground_truth_forward_flow(

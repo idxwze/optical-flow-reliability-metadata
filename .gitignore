@@ -1,9 +1,10 @@
 .venv/
+outputs/
 __pycache__/
 *.pyc
 .DS_Store
-data/
-outputs/
 *.tfrecord*
+data/
+*.log
 *.record
 .ipynb_checkpoints/
