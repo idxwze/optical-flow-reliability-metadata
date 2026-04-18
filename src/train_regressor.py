@@ -211,13 +211,13 @@ def evaluate_model(
     active_feature_columns = list(feature_columns)
 
     all_nan_mask = np.all(np.isnan(X_train), axis=0)
+    keep_mask = ~all_nan_mask
     dropped_columns = [
         column_name
         for column_name, should_drop in zip(active_feature_columns, all_nan_mask)
         if should_drop
     ]
     if dropped_columns:
-        keep_mask = ~all_nan_mask
         X_train = X_train[:, keep_mask]
         X_test = X_test[:, keep_mask]
         active_feature_columns = [
@@ -229,6 +229,8 @@ def evaluate_model(
 
     pipeline.fit(X_train, y_train)
     y_pred = pipeline.predict(X_test)
+
+    test_key_set = {(str(s), int(r)) for s, r in zip(scenario_test, record_idx_test)}
 
     mae = float(mean_absolute_error(y_test, y_pred))
     rmse = float(np.sqrt(mean_squared_error(y_test, y_pred)))
@@ -281,7 +283,39 @@ def evaluate_model(
         for scenario, ridx, yt, yp in zip(scenario_test, record_idx_test, y_test, y_pred)
     ]
 
-    return metrics, preds_rows
+    return metrics, preds_rows, pipeline, keep_mask, test_key_set
+
+
+def save_demo_predictions_csv(
+    *,
+    pipeline: Pipeline,
+    keep_mask: np.ndarray,
+    X: np.ndarray,
+    y: np.ndarray,
+    scenarios: np.ndarray,
+    record_indices: np.ndarray,
+    test_key_set: set[tuple[str, int]],
+    out_path: Path,
+) -> None:
+    """Same model as evaluation, applied to every row for Streamlit / visualization (train = in-sample)."""
+    X_use = np.asarray(X[:, keep_mask], dtype=np.float64)
+    y_pred_all = pipeline.predict(X_use)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["scenario", "record_index", "y_true", "y_pred", "split"])
+        for i in range(int(y.shape[0])):
+            key = (str(scenarios[i]), int(record_indices[i]))
+            tag = "test" if key in test_key_set else "train"
+            writer.writerow(
+                [
+                    scenarios[i],
+                    int(record_indices[i]),
+                    float(y[i]),
+                    float(y_pred_all[i]),
+                    tag,
+                ]
+            )
 
 
 def save_single_run_outputs(
@@ -290,6 +324,14 @@ def save_single_run_outputs(
     preds_rows: list[dict[str, object]],
     output_dir: Path,
     target_column: str,
+    *,
+    pipeline: Pipeline | None = None,
+    keep_mask: np.ndarray | None = None,
+    X_full: np.ndarray | None = None,
+    y_full: np.ndarray | None = None,
+    scenarios_full: np.ndarray | None = None,
+    record_indices_full: np.ndarray | None = None,
+    test_key_set: set[tuple[str, int]] | None = None,
 ) -> None:
     target_token = _target_to_filename_token(target_column)
     metrics_path = output_dir / f"metrics_{model_name}_{target_token}.json"
@@ -304,6 +346,28 @@ def save_single_run_outputs(
             writer.writerow(
                 [row["scenario"], int(row["record_index"]), float(row["y_true"]), float(row["y_pred"])]
             )
+
+    if (
+        pipeline is not None
+        and keep_mask is not None
+        and X_full is not None
+        and y_full is not None
+        and scenarios_full is not None
+        and record_indices_full is not None
+        and test_key_set is not None
+    ):
+        demo_path = output_dir / f"preds_{model_name}_{target_token}_demo.csv"
+        save_demo_predictions_csv(
+            pipeline=pipeline,
+            keep_mask=keep_mask,
+            X=X_full,
+            y=y_full,
+            scenarios=scenarios_full,
+            record_indices=record_indices_full,
+            test_key_set=test_key_set,
+            out_path=demo_path,
+        )
+        print(f"[{model_name}] Saved demo predictions (all rows): {demo_path}")
 
     tm = metrics["test_metrics"]
     cvm = metrics["cv_metrics"]
@@ -338,10 +402,14 @@ def run_single_evaluation(
     split_mode: str,
     feature_columns: list[str],
     save_outputs: bool,
+    X_full: np.ndarray | None = None,
+    y_full: np.ndarray | None = None,
+    scenarios_full: np.ndarray | None = None,
+    record_indices_full: np.ndarray | None = None,
 ):
     results: dict[str, dict] = {}
     for name, model in models.items():
-        metrics, preds_rows = evaluate_model(
+        metrics, preds_rows, pipeline, keep_mask, test_key_set = evaluate_model(
             model_name=name,
             estimator=model,
             split=split,
@@ -360,6 +428,13 @@ def run_single_evaluation(
                 preds_rows=preds_rows,
                 output_dir=output_dir,
                 target_column=target_column,
+                pipeline=pipeline,
+                keep_mask=keep_mask,
+                X_full=X_full,
+                y_full=y_full,
+                scenarios_full=scenarios_full,
+                record_indices_full=record_indices_full,
+                test_key_set=test_key_set,
             )
         else:
             tm = metrics["test_metrics"]
@@ -537,6 +612,10 @@ def main():
         split_mode=args.split_mode,
         feature_columns=feature_columns,
         save_outputs=True,
+        X_full=X,
+        y_full=y,
+        scenarios_full=scenarios,
+        record_indices_full=record_indices,
     )
 
 
